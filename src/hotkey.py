@@ -50,15 +50,28 @@ def _type_unicode_char(char: str) -> None:
     _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
 def _type_char(char: str) -> None:
-    """Умная печать: для Tab и Enter использует физические кнопки, для остального Unicode"""
+    """Умная печать через единый SendInput для гарантии порядка"""
+    inputs = (INPUT * 2)()
+    inputs[0].type = INPUT_KEYBOARD
+    inputs[1].type = INPUT_KEYBOARD
+    
     if char == '\t':
-        _user32.keybd_event(_VK_TAB, 0, 0, 0)
-        _user32.keybd_event(_VK_TAB, 0, _KEYEVENTF_KEYUP, 0)
+        inputs[0].ki.wVk = _VK_TAB
+        inputs[1].ki.wVk = _VK_TAB
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
     elif char == '\n':
-        _user32.keybd_event(_VK_RETURN, 0, 0, 0)
-        _user32.keybd_event(_VK_RETURN, 0, _KEYEVENTF_KEYUP, 0)
+        inputs[0].ki.wVk = _VK_RETURN
+        inputs[1].ki.wVk = _VK_RETURN
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
     else:
-        _type_unicode_char(char)
+        inputs[0].ki.wVk = 0
+        inputs[0].ki.wScan = ord(char)
+        inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
+        inputs[1].ki.wVk = 0
+        inputs[1].ki.wScan = ord(char)
+        inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
+        
+    _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
 # --- State для Hacker Typer ---
 _full_text: str = ""
@@ -125,6 +138,7 @@ def prepare_line_by_line(text: str) -> None:
     if not text:
         return
     with _lines_lock:
+        text = text.replace('\r', '')
         raw_lines = text.split('\n')
         processed_lines = []
         for line in raw_lines:
