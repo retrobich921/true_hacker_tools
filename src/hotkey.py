@@ -112,7 +112,10 @@ def stop_hacker_mode():
         return
     _hacker_mode_active = False
     for hook in _hacker_hooks:
-        keyboard.unhook_key(hook)
+        try:
+            keyboard.unhook_key(hook)
+        except ValueError:
+            pass
     _hacker_hooks.clear()
     logger.info("Hacker Mode ВЫКЛЮЧЕН. Код полностью вставлен.")
 
@@ -161,9 +164,12 @@ def _on_hacker_key_pressed(event):
                 logger.info("Код полностью напечатан! Жми Backspace для удаления \\ и выхода.")
         else:
             # Код ЗАКОНЧЕН. Клавиатура заблокирована (кроме Backspace).
-            if event.name == 'backspace':
+            if event.name and 'backspace' in event.name.lower():
+                logger.info("Нажат Backspace, отключаем Hacker Mode!")
                 # Симулируем нажатие Backspace чтобы стереть \
                 _user32.keybd_event(0x08, 0, 0, 0)
                 _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
                 # Отключаем режим хакера
                 threading.Thread(target=stop_hacker_mode, daemon=True).start()
+            else:
+                logger.debug(f"Нажата клавиша {event.name}, но ждем Backspace.")
