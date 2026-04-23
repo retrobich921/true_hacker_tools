@@ -1,0 +1,23 @@
+# Environments
+.env
+.venv/
+
+# Logs
+app.log
+*.log
+
+# Personal files and Drafts
+trash.py
+context.txt
+PLAN.md
+main.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.pytest_cache/
