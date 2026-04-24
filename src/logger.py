@@ -29,12 +29,13 @@ def setup_logger() -> None:
         encoding="utf-8"
     )
     
-    # Для удобства ручной отладки оставим вывод в консоль (если запускать через терминал)
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        enqueue=True
-    )
+    # Для удобства ручной отладки оставим вывод в консоль (если есть консоль)
+    if sys.stderr is not None:
+        logger.add(
+            sys.stderr,
+            level="INFO",
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            enqueue=True
+        )
     
     logger.debug("Логгер успешно инициализирован.")
