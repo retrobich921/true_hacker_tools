@@ -55,27 +55,15 @@ def _type_char(char: str) -> None:
     inputs[0].type = INPUT_KEYBOARD
     inputs[1].type = INPUT_KEYBOARD
     
-    if char == '\t':
-        inputs[0].ki.wVk = _VK_TAB
-        inputs[0].ki.wScan = 0x0F
-        inputs[0].ki.dwFlags = 0
-        inputs[1].ki.wVk = _VK_TAB
-        inputs[1].ki.wScan = 0x0F
-        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
-    elif char == '\n':
-        inputs[0].ki.wVk = _VK_RETURN
-        inputs[0].ki.wScan = 0x1C
-        inputs[0].ki.dwFlags = 0
-        inputs[1].ki.wVk = _VK_RETURN
-        inputs[1].ki.wScan = 0x1C
-        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
-    else:
-        inputs[0].ki.wVk = 0
-        inputs[0].ki.wScan = ord(char)
-        inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
-        inputs[1].ki.wVk = 0
-        inputs[1].ki.wScan = ord(char)
-        inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
+    if char == '\n':
+        char = '\r'
+        
+    inputs[0].ki.wVk = 0
+    inputs[0].ki.wScan = ord(char)
+    inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
+    inputs[1].ki.wVk = 0
+    inputs[1].ki.wScan = ord(char)
+    inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
         
     _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
@@ -85,7 +73,6 @@ _current_char_index: int = 0
 _lines_lock = threading.Lock()
 _hacker_hooks = []
 _hacker_mode_active = False
-_exit_hotkey_hook = None
 
 def _winapi_send_ctrl_c() -> None:
     _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
@@ -111,9 +98,11 @@ def get_selected_text() -> str:
         pyperclip.copy(old_clipboard)
     return text
 
-def _on_exit_hacker_mode():
+def force_exit_hacker_mode():
+    global _hacker_mode_active, _current_char_index
+    if not _hacker_mode_active:
+        return
     logger.info("Нажат Ctrl+F9, отключаем Hacker Mode!")
-    global _current_char_index
     if _current_char_index == len(_full_text):
         _user32.keybd_event(0x08, 0, 0, 0)
         _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
@@ -121,7 +110,7 @@ def _on_exit_hacker_mode():
 
 def start_hacker_mode():
     """Включает перехват кнопок для непрерывной печати ВСЕГО кода"""
-    global _hacker_hooks, _hacker_mode_active, _exit_hotkey_hook
+    global _hacker_hooks, _hacker_mode_active
     if _hacker_mode_active:
         return
     _hacker_mode_active = True
@@ -132,12 +121,11 @@ def start_hacker_mode():
         hook = keyboard.on_press_key(k, _on_hacker_key_pressed, suppress=True)
         _hacker_hooks.append(hook)
         
-    _exit_hotkey_hook = keyboard.add_hotkey('ctrl+f9', _on_exit_hacker_mode, suppress=True)
     logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки! (Ctrl+F9 для выхода)")
 
 def stop_hacker_mode():
     """Выключает перехват, клавиатура возвращается в норму"""
-    global _hacker_hooks, _hacker_mode_active, _exit_hotkey_hook
+    global _hacker_hooks, _hacker_mode_active
     if not _hacker_mode_active:
         return
     _hacker_mode_active = False
@@ -147,12 +135,6 @@ def stop_hacker_mode():
         except ValueError:
             pass
     _hacker_hooks.clear()
-    if _exit_hotkey_hook:
-        try:
-            keyboard.remove_hotkey(_exit_hotkey_hook)
-        except Exception:
-            pass
-        _exit_hotkey_hook = None
     logger.info("Hacker Mode ВЫКЛЮЧЕН. Код полностью вставлен.")
 
 def prepare_line_by_line(text: str) -> None:
