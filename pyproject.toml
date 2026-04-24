@@ -10,6 +10,7 @@ dependencies = [
     "langchain-google-genai>=4.2.2",
     "loguru>=0.7.3",
     "pillow>=12.2.0",
+    "pyinstaller>=6.20.0",
     "pyperclip>=1.11.0",
     "pystray>=0.19.5",
     "python-dotenv>=1.2.2",
