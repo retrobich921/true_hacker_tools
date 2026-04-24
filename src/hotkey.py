@@ -9,6 +9,7 @@ import keyboard
 _VK_CONTROL = 0x11
 _VK_C       = 0x43
 _VK_TAB     = 0x09
+_VK_RETURN  = 0x0D
 _KEYEVENTF_KEYUP = 0x0002
 
 _user32 = ctypes.windll.user32  # type: ignore[attr-defined]
@@ -49,16 +50,31 @@ def _type_unicode_char(char: str) -> None:
     _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
 def _type_char(char: str) -> None:
-    """Умная печать: для Tab использует физическую кнопку (чтобы IDE не теряла табы), для остального Unicode"""
+    """Умная печать через единый SendInput для гарантии порядка"""
+    inputs = (INPUT * 2)()
+    inputs[0].type = INPUT_KEYBOARD
+    inputs[1].type = INPUT_KEYBOARD
+    
     if char == '\t':
-        _user32.keybd_event(_VK_TAB, 0, 0, 0)
-        _user32.keybd_event(_VK_TAB, 0, _KEYEVENTF_KEYUP, 0)
+        inputs[0].ki.wVk = _VK_TAB
+        inputs[1].ki.wVk = _VK_TAB
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
+    elif char == '\n':
+        inputs[0].ki.wVk = _VK_RETURN
+        inputs[1].ki.wVk = _VK_RETURN
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
     else:
-        _type_unicode_char(char)
+        inputs[0].ki.wVk = 0
+        inputs[0].ki.wScan = ord(char)
+        inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
+        inputs[1].ki.wVk = 0
+        inputs[1].ki.wScan = ord(char)
+        inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
+        
+    _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
 # --- State для Hacker Typer ---
-_answer_lines: list[str] = []
-_current_line_index: int = 0
+_full_text: str = ""
 _current_char_index: int = 0
 _lines_lock = threading.Lock()
 _hacker_hooks = []
@@ -89,18 +105,18 @@ def get_selected_text() -> str:
     return text
 
 def start_hacker_mode():
-    """Включает перехват кнопок: теперь нажатия будут печатать правильный код"""
+    """Включает перехват кнопок для непрерывной печати ВСЕГО кода"""
     global _hacker_hooks, _hacker_mode_active
     if _hacker_mode_active:
         return
     _hacker_mode_active = True
     
-    # Перехватываем только базовые клавиши (буквы, цифры, символы, пробел)
-    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./` ")
+    # Перехватываем буквы, цифры, символы, пробел, enter и backspace
+    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter', 'backspace']
     for k in keys_to_intercept:
         hook = keyboard.on_press_key(k, _on_hacker_key_pressed, suppress=True)
         _hacker_hooks.append(hook)
-    logger.info("Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре!")
+    logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки!")
 
 def stop_hacker_mode():
     """Выключает перехват, клавиатура возвращается в норму"""
@@ -109,68 +125,65 @@ def stop_hacker_mode():
         return
     _hacker_mode_active = False
     for hook in _hacker_hooks:
-        keyboard.unhook_key(hook)
+        try:
+            keyboard.unhook_key(hook)
+        except ValueError:
+            pass
     _hacker_hooks.clear()
-    logger.info("Hacker Mode ВЫКЛЮЧЕН. Сделай Backspace, Enter, затем F8.")
+    logger.info("Hacker Mode ВЫКЛЮЧЕН. Код полностью вставлен.")
 
 def prepare_line_by_line(text: str) -> None:
-    global _answer_lines, _current_line_index, _current_char_index
+    """Подготавливает ВЕСЬ текст целиком для Hacker Mode"""
+    global _full_text, _current_char_index
     if not text:
         return
     with _lines_lock:
+        text = text.replace('\r', '')
         raw_lines = text.split('\n')
-        _answer_lines = []
+        processed_lines = []
         for line in raw_lines:
             spaces = len(line) - len(line.lstrip(' '))
             if spaces > 0:
                 tabs = spaces // 4
                 remainder = spaces % 4
                 line = '\t' * tabs + ' ' * remainder + line.lstrip(' ')
-            _answer_lines.append(line)
+            processed_lines.append(line)
         
-        _current_line_index = 0
+        # Склеиваем всё обратно с переносами строк
+        _full_text = '\n'.join(processed_lines)
         _current_char_index = 0
         
-        if _answer_lines:
-            logger.info(f"Ответ готов (строк: {len(_answer_lines)}).")
-            # Сразу активируем печать первой строки
+        if _full_text:
+            logger.info(f"Весь ответ готов (символов: {len(_full_text)}).")
+            # Активируем Hacker Mode
             start_hacker_mode()
 
 def _on_hacker_key_pressed(event):
-    """Callback: вызывается когда ты бьешь по любой букве/цифре"""
+    """Callback: вызывается когда ты бьешь по клавиатуре"""
     if event.event_type != keyboard.KEY_DOWN:
         return
         
-    global _current_line_index, _current_char_index
+    global _current_char_index
     
     with _lines_lock:
-        if _current_line_index >= len(_answer_lines):
-            return
-            
-        line = _answer_lines[_current_line_index]
-        
-        if _current_char_index < len(line):
-            # Печатаем НАСТОЯЩИЙ символ из ответа LLM
-            char = line[_current_char_index]
+        if _current_char_index < len(_full_text):
+            # Печатаем НАСТОЯЩИЙ символ (включая пробелы, \n и \t)
+            char = _full_text[_current_char_index]
             _current_char_index += 1
             _type_char(char)
             
-            # Если строка закончилась
-            if _current_char_index == len(line):
-                _type_char('\\') # Ставим слеш по твоей просьбе
-                # Отключаем режим хакера в фоне (чтобы не заблокировать поток клавиатуры)
+            # Если код только что закончился
+            if _current_char_index == len(_full_text):
+                _type_char('\\') # Ставим слеш в САМОМ конце
+                logger.info("Код полностью напечатан! Жми Backspace для удаления \\ и выхода.")
+        else:
+            # Код ЗАКОНЧЕН. Клавиатура заблокирована (кроме Backspace).
+            if event.name and 'backspace' in event.name.lower():
+                logger.info("Нажат Backspace, отключаем Hacker Mode!")
+                # Симулируем нажатие Backspace чтобы стереть \
+                _user32.keybd_event(0x08, 0, 0, 0)
+                _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
+                # Отключаем режим хакера
                 threading.Thread(target=stop_hacker_mode, daemon=True).start()
-
-def on_user_paste() -> None:
-    """Вызывается по хоткею F8 - заряжает следующую строку"""
-    global _current_line_index, _current_char_index
-    with _lines_lock:
-        if _current_line_index >= len(_answer_lines) - 1:
-            logger.info("Это была последняя строка! Код полностью вставлен.")
-            return
-            
-        _current_line_index += 1
-        _current_char_index = 0
-        logger.info(f"Загружена строка {_current_line_index + 1}/{len(_answer_lines)}.")
-        # Снова включаем перехват
-        threading.Thread(target=start_hacker_mode, daemon=True).start()
+            else:
+                logger.debug(f"Нажата клавиша {event.name}, но ждем Backspace.")
