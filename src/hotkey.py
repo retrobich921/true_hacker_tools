@@ -57,11 +57,17 @@ def _type_char(char: str) -> None:
     
     if char == '\t':
         inputs[0].ki.wVk = _VK_TAB
+        inputs[0].ki.wScan = 0x0F
+        inputs[0].ki.dwFlags = 0
         inputs[1].ki.wVk = _VK_TAB
+        inputs[1].ki.wScan = 0x0F
         inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
     elif char == '\n':
         inputs[0].ki.wVk = _VK_RETURN
+        inputs[0].ki.wScan = 0x1C
+        inputs[0].ki.dwFlags = 0
         inputs[1].ki.wVk = _VK_RETURN
+        inputs[1].ki.wScan = 0x1C
         inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
     else:
         inputs[0].ki.wVk = 0
@@ -79,6 +85,7 @@ _current_char_index: int = 0
 _lines_lock = threading.Lock()
 _hacker_hooks = []
 _hacker_mode_active = False
+_exit_hotkey_hook = None
 
 def _winapi_send_ctrl_c() -> None:
     _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
@@ -104,23 +111,33 @@ def get_selected_text() -> str:
         pyperclip.copy(old_clipboard)
     return text
 
+def _on_exit_hacker_mode():
+    logger.info("Нажат Ctrl+F9, отключаем Hacker Mode!")
+    global _current_char_index
+    if _current_char_index == len(_full_text):
+        _user32.keybd_event(0x08, 0, 0, 0)
+        _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
+    threading.Thread(target=stop_hacker_mode, daemon=True).start()
+
 def start_hacker_mode():
     """Включает перехват кнопок для непрерывной печати ВСЕГО кода"""
-    global _hacker_hooks, _hacker_mode_active
+    global _hacker_hooks, _hacker_mode_active, _exit_hotkey_hook
     if _hacker_mode_active:
         return
     _hacker_mode_active = True
     
-    # Перехватываем буквы, цифры, символы, пробел, enter и f9
-    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter', 'f9']
+    # Перехватываем буквы, цифры, символы, пробел и enter
+    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter']
     for k in keys_to_intercept:
         hook = keyboard.on_press_key(k, _on_hacker_key_pressed, suppress=True)
         _hacker_hooks.append(hook)
-    logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки! (F9 для выхода)")
+        
+    _exit_hotkey_hook = keyboard.add_hotkey('ctrl+f9', _on_exit_hacker_mode, suppress=True)
+    logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки! (Ctrl+F9 для выхода)")
 
 def stop_hacker_mode():
     """Выключает перехват, клавиатура возвращается в норму"""
-    global _hacker_hooks, _hacker_mode_active
+    global _hacker_hooks, _hacker_mode_active, _exit_hotkey_hook
     if not _hacker_mode_active:
         return
     _hacker_mode_active = False
@@ -130,6 +147,12 @@ def stop_hacker_mode():
         except ValueError:
             pass
     _hacker_hooks.clear()
+    if _exit_hotkey_hook:
+        try:
+            keyboard.remove_hotkey(_exit_hotkey_hook)
+        except Exception:
+            pass
+        _exit_hotkey_hook = None
     logger.info("Hacker Mode ВЫКЛЮЧЕН. Код полностью вставлен.")
 
 def prepare_line_by_line(text: str) -> None:
@@ -166,16 +189,6 @@ def _on_hacker_key_pressed(event):
     global _current_char_index
     
     with _lines_lock:
-        # F9 работает как аварийный выход из режима в ЛЮБОЙ момент
-        if event.name and 'f9' in event.name.lower():
-            logger.info("Нажат F9, отключаем Hacker Mode!")
-            # Если мы были в самом конце и там стоял слеш - стираем его
-            if _current_char_index == len(_full_text):
-                _user32.keybd_event(0x08, 0, 0, 0)
-                _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
-            threading.Thread(target=stop_hacker_mode, daemon=True).start()
-            return
-            
         if _current_char_index < len(_full_text):
             # Печатаем НАСТОЯЩИЙ символ (включая пробелы, \n и \t)
             char = _full_text[_current_char_index]
@@ -185,6 +198,6 @@ def _on_hacker_key_pressed(event):
             # Если код только что закончился
             if _current_char_index == len(_full_text):
                 _type_char('\\') # Ставим слеш в САМОМ конце
-                logger.info("Код полностью напечатан! Жми F9 для удаления \\ и выхода.")
+                logger.info("Код полностью напечатан! Жми Ctrl+F9 для удаления \\ и выхода.")
         else:
-            logger.debug(f"Нажата клавиша {event.name}, но ждем F9.")
+            logger.debug(f"Нажата клавиша {event.name}, ждем Ctrl+F9.")
