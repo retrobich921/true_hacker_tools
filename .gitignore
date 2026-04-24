@@ -8,9 +8,10 @@ app.log
 
 # Personal files and Drafts
 trash.py
-context.txt
 PLAN.md
 main.py
+*.txt
+!context.txt
 
 # Python
 __pycache__/
