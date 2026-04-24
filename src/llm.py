@@ -4,8 +4,16 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-# Загружаем переменные окружения (в т.ч. GOOGLE_API_KEY из .env)
-load_dotenv()
+import sys
+
+def get_app_dir() -> str:
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Загружаем переменные окружения из папки с exe
+env_path = os.path.join(get_app_dir(), ".env")
+load_dotenv(dotenv_path=env_path)
 
 class LLMPipeline:
     def __init__(self, model_name: str = "gemini-2.5-flash") -> None:
@@ -15,8 +23,8 @@ class LLMPipeline:
         """
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key or api_key.startswith("AIzaSy..."):
-            logger.error("Ключ GOOGLE_API_KEY не установлен или используется пример из .env.example")
-            raise ValueError("Ключ GOOGLE_API_KEY не найден в файле .env")
+            logger.error(f"Ключ GOOGLE_API_KEY не установлен или используется пример. Проверьте файл: {env_path}")
+            raise ValueError(f"Ключ GOOGLE_API_KEY не найден в файле {env_path}")
 
         logger.debug(f"Инициализация LLM с моделью: {model_name}")
         self.llm = ChatGoogleGenerativeAI(model=model_name, temperature=0.1)
@@ -36,7 +44,7 @@ class LLMPipeline:
 
         # Читаем шпаргалки пользователя из context.txt (если файл существует)
         extra_context = ""
-        context_path = os.path.join(os.path.dirname(__file__), "..", "context.txt")
+        context_path = os.path.join(get_app_dir(), "context.txt")
         if os.path.exists(context_path):
             try:
                 with open(context_path, "r", encoding="utf-8") as f:

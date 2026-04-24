@@ -8,10 +8,19 @@ def setup_logger() -> None:
     # Удаляем стандартный логгер (который пишет только в консоль по умолчанию)
     logger.remove()
     
+    import os
+    
+    def get_app_dir() -> str:
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+    log_path = os.path.join(get_app_dir(), "app.log")
+    
     # Настраиваем запись в файл app.log
     # enqueue=True гарантирует потокобезопасность при работе с asyncio и threading
     logger.add(
-        "app.log",
+        log_path,
         rotation="5 MB",         # Ротация каждые 5 МБ
         retention="10 days",     # Хранить логи за последние 10 дней
         level="DEBUG",

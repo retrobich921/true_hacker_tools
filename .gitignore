@@ -6,6 +6,13 @@
 app.log
 *.log
 
+# PyInstaller
+dist/
+build/
+*.spec
+release/
+*.zip
+
 # Personal files and Drafts
 trash.py
 PLAN.md
