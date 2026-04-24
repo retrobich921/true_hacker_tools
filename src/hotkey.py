@@ -51,23 +51,31 @@ def _type_unicode_char(char: str) -> None:
 
 def _type_char(char: str) -> None:
     """Умная печать через единый SendInput для гарантии порядка"""
-    if char == '\n':
-        keyboard.send('enter')
-        return
-    if char == '\t':
-        keyboard.send('tab')
-        return
-        
     inputs = (INPUT * 2)()
     inputs[0].type = INPUT_KEYBOARD
     inputs[1].type = INPUT_KEYBOARD
     
-    inputs[0].ki.wVk = 0
-    inputs[0].ki.wScan = ord(char)
-    inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
-    inputs[1].ki.wVk = 0
-    inputs[1].ki.wScan = ord(char)
-    inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
+    if char == '\n':
+        inputs[0].ki.wVk = _VK_RETURN
+        inputs[0].ki.wScan = 0x1C
+        inputs[0].ki.dwFlags = 0
+        inputs[1].ki.wVk = _VK_RETURN
+        inputs[1].ki.wScan = 0x1C
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
+    elif char == '\t':
+        inputs[0].ki.wVk = _VK_TAB
+        inputs[0].ki.wScan = 0x0F
+        inputs[0].ki.dwFlags = 0
+        inputs[1].ki.wVk = _VK_TAB
+        inputs[1].ki.wScan = 0x0F
+        inputs[1].ki.dwFlags = _KEYEVENTF_KEYUP
+    else:
+        inputs[0].ki.wVk = 0
+        inputs[0].ki.wScan = ord(char)
+        inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
+        inputs[1].ki.wVk = 0
+        inputs[1].ki.wScan = ord(char)
+        inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
         
     _user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
@@ -119,8 +127,9 @@ def start_hacker_mode():
         return
     _hacker_mode_active = True
     
-    # Перехватываем буквы, цифры, символы, пробел и enter
-    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter']
+    # Перехватываем буквы, цифры, символы, пробел
+    # (Enter специально убран, чтобы мы могли сами эмулировать его нажатие без блокировки)
+    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space']
     for k in keys_to_intercept:
         hook = keyboard.on_press_key(k, _on_hacker_key_pressed, suppress=True)
         _hacker_hooks.append(hook)
