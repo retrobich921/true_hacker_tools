@@ -72,34 +72,48 @@ class LLMPipeline:
 
         messages = [SystemMessage(content=sys_prompt)] + self.history + [HumanMessage(content=text)]
 
-        try:
-            from langchain_core.output_parsers import StrOutputParser
-            chain = self.llm | StrOutputParser()
-            answer = await chain.ainvoke(messages)
-            answer = answer.strip()
+        import asyncio
+        from langchain_core.output_parsers import StrOutputParser
+        
+        chain = self.llm | StrOutputParser()
+        
+        max_retries = 3
+        retry_delay = 2.0
 
-            # Жестко удаляем Markdown-блоки, если Gemini всё равно их добавил
-            if answer.startswith("```"):
-                lines = answer.split("\n")
-                if len(lines) > 1 and lines[0].startswith("```"):
-                    lines = lines[1:]
-                if len(lines) > 0 and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                answer = "\n".join(lines).strip()
-
-            logger.info("Ответ от Gemini успешно получен.")
-            logger.debug(f"Длина ответа: {len(answer)} символов.")
-            
-            # Сохраняем этот диалог в память
-            self.history.append(HumanMessage(content=text))
-            self.history.append(AIMessage(content=answer))
-            
-            # Храним только последние 8 сообщений (4 пары вопрос-ответ), чтобы не сойти с ума
-            if len(self.history) > 8:
-                self.history = self.history[-8:]
-
-            return answer
-
-        except Exception as e:
-            logger.error(f"Ошибка при вызове Gemini: {e}")
-            return ""
+        for attempt in range(1, max_retries + 1):
+            try:
+                answer = await chain.ainvoke(messages)
+                answer = answer.strip()
+    
+                # Жестко удаляем Markdown-блоки, если Gemini всё равно их добавил
+                if answer.startswith("```"):
+                    lines = answer.split("\n")
+                    if len(lines) > 1 and lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if len(lines) > 0 and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    answer = "\n".join(lines).strip()
+    
+                logger.info("Ответ от Gemini успешно получен.")
+                logger.debug(f"Длина ответа: {len(answer)} символов.")
+                
+                # Сохраняем этот диалог в память
+                self.history.append(HumanMessage(content=text))
+                self.history.append(AIMessage(content=answer))
+                
+                # Храним только последние 8 сообщений (4 пары вопрос-ответ), чтобы не сойти с ума
+                if len(self.history) > 8:
+                    self.history = self.history[-8:]
+    
+                return answer
+    
+            except Exception as e:
+                logger.error(f"Попытка {attempt}/{max_retries} не удалась. Ошибка: {e}")
+                if attempt < max_retries and ("503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e)):
+                    logger.info(f"Сервера Google перегружены. Ждем {retry_delay} сек перед повторной попыткой...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Экспоненциальный бэкофф
+                else:
+                    if attempt == max_retries:
+                        logger.error("Все попытки исчерпаны. Google API перегружен. Попробуй позже.")
+                    return ""
