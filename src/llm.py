@@ -108,12 +108,26 @@ class LLMPipeline:
                 return answer
     
             except Exception as e:
-                logger.error(f"Попытка {attempt}/{max_retries} не удалась. Ошибка: {e}")
-                if attempt < max_retries and ("503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e)):
-                    logger.info(f"Сервера Google перегружены. Ждем {retry_delay} сек перед повторной попыткой...")
+                err_str = str(e)
+                logger.error(f"Попытка {attempt}/{max_retries} не удалась. Ошибка: {err_str}")
+                
+                if attempt < max_retries and ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "RESOURCE_EXHAUSTED" in err_str):
+                    # Пытаемся вытащить точное время из ошибки (например, "Please retry in 46.973017842s.")
+                    import re
+                    match = re.search(r"Please retry in (\d+\.?\d*)s", err_str)
+                    if match:
+                        retry_delay = float(match.group(1)) + 0.5  # берем время из ответа API + небольшой запас
+                        
+                    # Пытаемся вытащить лимиты
+                    limits_match = re.search(r"limit:\s*(\d+)", err_str)
+                    limit_info = f" (Лимит: {limits_match.group(1)} запросов)" if limits_match else ""
+                        
+                    logger.info(f"API перегружен{limit_info}. Ждем {retry_delay:.1f} сек перед повторной попыткой...")
                     await asyncio.sleep(retry_delay)
-                    retry_delay *= 2  # Экспоненциальный бэкофф
+                    
+                    if not match:
+                        retry_delay *= 2  # Экспоненциальный бэкофф, если API не сказал сколько ждать
                 else:
                     if attempt == max_retries:
-                        logger.error("Все попытки исчерпаны. Google API перегружен. Попробуй позже.")
+                        logger.error("Все попытки исчерпаны. Google API перегружен или лимит квот исчерпан. Попробуй позже.")
                     return ""

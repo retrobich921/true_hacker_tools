@@ -51,13 +51,17 @@ def _type_unicode_char(char: str) -> None:
 
 def _type_char(char: str) -> None:
     """Умная печать через единый SendInput для гарантии порядка"""
+    if char == '\n':
+        keyboard.send('enter')
+        return
+    if char == '\t':
+        keyboard.send('tab')
+        return
+        
     inputs = (INPUT * 2)()
     inputs[0].type = INPUT_KEYBOARD
     inputs[1].type = INPUT_KEYBOARD
     
-    if char == '\n':
-        char = '\r'
-        
     inputs[0].ki.wVk = 0
     inputs[0].ki.wScan = ord(char)
     inputs[0].ki.dwFlags = KEYEVENTF_UNICODE
