@@ -111,12 +111,12 @@ def start_hacker_mode():
         return
     _hacker_mode_active = True
     
-    # Перехватываем буквы, цифры, символы, пробел, enter и backspace
-    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter', 'backspace']
+    # Перехватываем буквы, цифры, символы, пробел, enter и f9
+    keys_to_intercept = list("abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`") + ['space', 'enter', 'f9']
     for k in keys_to_intercept:
         hook = keyboard.on_press_key(k, _on_hacker_key_pressed, suppress=True)
         _hacker_hooks.append(hook)
-    logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки!")
+    logger.info("Full Hacker Mode ВКЛЮЧЕН. Стучи по клавиатуре без остановки! (F9 для выхода)")
 
 def stop_hacker_mode():
     """Выключает перехват, клавиатура возвращается в норму"""
@@ -166,6 +166,16 @@ def _on_hacker_key_pressed(event):
     global _current_char_index
     
     with _lines_lock:
+        # F9 работает как аварийный выход из режима в ЛЮБОЙ момент
+        if event.name and 'f9' in event.name.lower():
+            logger.info("Нажат F9, отключаем Hacker Mode!")
+            # Если мы были в самом конце и там стоял слеш - стираем его
+            if _current_char_index == len(_full_text):
+                _user32.keybd_event(0x08, 0, 0, 0)
+                _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
+            threading.Thread(target=stop_hacker_mode, daemon=True).start()
+            return
+            
         if _current_char_index < len(_full_text):
             # Печатаем НАСТОЯЩИЙ символ (включая пробелы, \n и \t)
             char = _full_text[_current_char_index]
@@ -175,15 +185,6 @@ def _on_hacker_key_pressed(event):
             # Если код только что закончился
             if _current_char_index == len(_full_text):
                 _type_char('\\') # Ставим слеш в САМОМ конце
-                logger.info("Код полностью напечатан! Жми Backspace для удаления \\ и выхода.")
+                logger.info("Код полностью напечатан! Жми F9 для удаления \\ и выхода.")
         else:
-            # Код ЗАКОНЧЕН. Клавиатура заблокирована (кроме Backspace).
-            if event.name and 'backspace' in event.name.lower():
-                logger.info("Нажат Backspace, отключаем Hacker Mode!")
-                # Симулируем нажатие Backspace чтобы стереть \
-                _user32.keybd_event(0x08, 0, 0, 0)
-                _user32.keybd_event(0x08, 0, _KEYEVENTF_KEYUP, 0)
-                # Отключаем режим хакера
-                threading.Thread(target=stop_hacker_mode, daemon=True).start()
-            else:
-                logger.debug(f"Нажата клавиша {event.name}, но ждем Backspace.")
+            logger.debug(f"Нажата клавиша {event.name}, но ждем F9.")
